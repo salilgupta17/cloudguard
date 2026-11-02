@@ -1,0 +1,6 @@
+# Example Terraform Variables for CloudGuard AWS Production Deployment
+aws_region         = "us-east-1"
+environment        = "production"
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+db_password        = "ChangeMeStrongPassword123!"

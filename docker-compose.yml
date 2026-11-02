@@ -1,0 +1,119 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Monitored Primary Production Database (Port 5432)
+  # ----------------------------------------------------------------------------
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: cloudguard-postgres-primary
+    environment:
+      POSTGRES_USER: cloudguard_admin
+      POSTGRES_PASSWORD: secure_prod_password
+      POSTGRES_DB: cloudguard_primary
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./infrastructure/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudguard_admin -d cloudguard_primary"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cloudguard-net
+
+  # ----------------------------------------------------------------------------
+  # 2. Isolated Sandbox Restore Target Database (Port 5433)
+  # CRITICAL: Segregated port & volume. Production NEVER restored here.
+  # ----------------------------------------------------------------------------
+  postgres-restore-test:
+    image: postgres:16-alpine
+    container_name: cloudguard-postgres-isolated-test
+    environment:
+      POSTGRES_USER: cloudguard_admin
+      POSTGRES_PASSWORD: secure_prod_password
+      POSTGRES_DB: cloudguard_isolated_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_restore_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudguard_admin -d cloudguard_isolated_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cloudguard-net
+
+  # ----------------------------------------------------------------------------
+  # 3. Monitored Demo Application (FastAPI Retail Service - Port 8001)
+  # ----------------------------------------------------------------------------
+  demo-application:
+    build:
+      context: ./demo-application
+      dockerfile: Dockerfile
+    container_name: cloudguard-demo-app
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://cloudguard_admin:secure_prod_password@postgres-primary:5432/cloudguard_primary
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    networks:
+      - cloudguard-net
+
+  # ----------------------------------------------------------------------------
+  # 4. CloudGuard Disaster Recovery Engine API (FastAPI - Port 8000)
+  # ----------------------------------------------------------------------------
+  cloudguard-api:
+    build:
+      context: ./cloudguard-api
+      dockerfile: Dockerfile
+    container_name: cloudguard-api
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://cloudguard_admin:secure_prod_password@postgres-primary:5432/cloudguard_db
+      - PRIMARY_DATABASE_URL=postgresql+psycopg2://cloudguard_admin:secure_prod_password@postgres-primary:5432/cloudguard_primary
+      - RESTORE_TEST_DATABASE_URL=postgresql+psycopg2://cloudguard_admin:secure_prod_password@postgres-restore-test:5432/cloudguard_isolated_test
+      - DEMO_APP_API_URL=http://demo-application:8001
+      - BACKUP_DIR=/app/backups
+      - TARGET_RTO_SECONDS=300
+      - TARGET_RPO_MINUTES=60
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backups:/app/backups
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      postgres-restore-test:
+        condition: service_healthy
+      demo-application:
+        condition: service_started
+    networks:
+      - cloudguard-net
+
+  # ----------------------------------------------------------------------------
+  # 5. CloudGuard React DR Operations Dashboard (Port 5173)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudguard-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - cloudguard-api
+    networks:
+      - cloudguard-net
+
+volumes:
+  postgres_primary_data:
+  postgres_restore_test_data:
+
+networks:
+  cloudguard-net:
+    driver: bridge
