@@ -68,8 +68,8 @@ services:
   # ----------------------------------------------------------------------------
   cloudguard-api:
     build:
-      context: ./cloudguard-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: cloudguard-api/Dockerfile
     container_name: cloudguard-api
     environment:
       - DATABASE_URL=postgresql+psycopg2://cloudguard_admin:secure_prod_password@postgres-primary:5432/cloudguard_db
