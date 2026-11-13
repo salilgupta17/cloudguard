@@ -7,12 +7,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY cloudguard-api/requirements.txt ./requirements/api.txt
+COPY validation-engine/requirements.txt ./requirements/validation.txt
+COPY report-service/requirements.txt ./requirements/reports.txt
+RUN pip install --no-cache-dir \
+    -r requirements/api.txt \
+    -r requirements/validation.txt \
+    -r requirements/reports.txt \
+    boto3
 
-COPY app/ ./app/
-COPY alembic/ ./alembic/
-COPY alembic.ini .
+COPY cloudguard-api/app/ ./app/
+COPY cloudguard-api/alembic/ ./alembic/
+COPY cloudguard-api/alembic.ini .
+COPY validation-engine/validation_engine/ ./validation_engine/
+COPY report-service/report_service/ ./report_service/
 
 ENV PYTHONPATH=/app
 
